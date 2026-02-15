@@ -1,49 +1,49 @@
-// Simple in-page console for debugging
-// Captures console.log, console.info, console.debug, console.warn, console.error
+// Enhanced in-page debug console for mobile-friendly diagnostics
+// Captures console output, timestamps it, and supports quick filtering.
 
 let isOpen = false;
 const messages = [];
-const MAX_MESSAGES = 100;
+const MAX_MESSAGES = 200;
 
-// Store original console methods
+const levels = {
+  log: true,
+  warn: true,
+  error: true
+};
+
 const originalLog = console.log;
 const originalInfo = console.info;
 const originalDebug = console.debug;
 const originalWarn = console.warn;
 const originalError = console.error;
 
-let output; // Reference to output element
+let output;
+let levelStatus;
+
+function serializeArg(arg) {
+  if (typeof arg === 'string') return arg;
+  if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ''}`;
+  if (typeof arg === 'object' && arg !== null) {
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return '[Unserializable object]';
+    }
+  }
+  return String(arg);
+}
 
 function addMessage(type, args) {
-  const text = args.map(arg =>
-    typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-  ).join(' ');
-
+  const text = args.map(serializeArg).join(' ');
   messages.push({ type, text, time: new Date().toLocaleTimeString() });
 
-  // Limit message history
   if (messages.length > MAX_MESSAGES) {
     messages.shift();
   }
 
-  // Update UI if console is open
   if (isOpen && output) {
     renderMessages();
   }
-}
-
-function renderMessages() {
-  if (!output) return;
-
-  output.innerHTML = messages.map(msg =>
-    `<div class="console-message console-${msg.type}">
-      <span class="console-time">[${msg.time}]</span>
-      <span class="console-text">${escapeHtml(msg.text)}</span>
-    </div>`
-  ).join('');
-
-  // Auto-scroll to bottom
-  output.scrollTop = output.scrollHeight;
 }
 
 function escapeHtml(text) {
@@ -52,31 +52,38 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function init() {
-  const toggle = document.getElementById('console-toggle');
-  const panel = document.getElementById('console-panel');
-  output = document.getElementById('console-output');
-  const clear = document.getElementById('console-clear');
+function filteredMessages() {
+  return messages.filter((msg) => levels[msg.type]);
+}
 
-  // Toggle console visibility
-  toggle.addEventListener('click', () => {
-    isOpen = !isOpen;
-    panel.style.display = isOpen ? 'flex' : 'none';
-    toggle.textContent = isOpen ? '✕' : '🐛';
+function renderMessages() {
+  if (!output) return;
 
-    // Render messages when opening
-    if (isOpen) {
-      renderMessages();
-    }
-  });
+  const visibleMessages = filteredMessages();
+  output.innerHTML = visibleMessages.map((msg) => `
+    <div class="console-message console-${msg.type}">
+      <span class="console-time">[${msg.time}]</span>
+      <span class="console-text">${escapeHtml(msg.text)}</span>
+    </div>
+  `).join('');
 
-  // Clear console
-  clear.addEventListener('click', () => {
-    messages.length = 0;
-    output.innerHTML = '';
-  });
+  output.scrollTop = output.scrollHeight;
 
-  // Intercept console methods
+  if (levelStatus) {
+    levelStatus.textContent = `Showing ${visibleMessages.length}/${messages.length}`;
+  }
+}
+
+function toggleLevel(level) {
+  levels[level] = !levels[level];
+  const btn = document.querySelector(`[data-level="${level}"]`);
+  if (btn) {
+    btn.classList.toggle('active', levels[level]);
+  }
+  renderMessages();
+}
+
+function interceptConsole() {
   console.log = (...args) => {
     originalLog(...args);
     addMessage('log', args);
@@ -84,12 +91,12 @@ function init() {
 
   console.info = (...args) => {
     originalInfo(...args);
-    addMessage('log', args); // Display as log
+    addMessage('log', args);
   };
 
   console.debug = (...args) => {
     originalDebug(...args);
-    addMessage('log', args); // Display as log
+    addMessage('log', args);
   };
 
   console.warn = (...args) => {
@@ -101,6 +108,46 @@ function init() {
     originalError(...args);
     addMessage('error', args);
   };
+}
+
+function init() {
+  const toggle = document.getElementById('console-toggle');
+  const panel = document.getElementById('console-panel');
+  output = document.getElementById('console-output');
+  const clear = document.getElementById('console-clear');
+
+  if (!toggle || !panel || !output || !clear) {
+    originalWarn('Debug console UI not found; skipping initialization');
+    return;
+  }
+
+  levelStatus = document.getElementById('console-level-status');
+
+  const levelButtons = document.querySelectorAll('[data-level]');
+  levelButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const level = button.getAttribute('data-level');
+      if (level) toggleLevel(level);
+    });
+    button.classList.add('active');
+  });
+
+  toggle.addEventListener('click', () => {
+    isOpen = !isOpen;
+    panel.style.display = isOpen ? 'flex' : 'none';
+    toggle.textContent = isOpen ? '✕' : '🐛';
+
+    if (isOpen) {
+      renderMessages();
+    }
+  });
+
+  clear.addEventListener('click', () => {
+    messages.length = 0;
+    renderMessages();
+  });
+
+  interceptConsole();
 }
 
 export { init };

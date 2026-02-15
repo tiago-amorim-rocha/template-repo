@@ -1,31 +1,52 @@
-name: Auto-update version.txt on main commits
+name: Auto-update version metadata on main commits
+
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - version.txt
+      - version.json
+
 permissions:
   contents: write
+
 jobs:
   update-version:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Update version.txt
+      - name: Update version files
         run: |
-          # Generate timestamp in milliseconds
           TIMESTAMP=$(date +%s%3N)
-          echo "$TIMESTAMP" > version.txt
+          DATE_ISO=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          BUILD_ID=$(openssl rand -hex 8)
+          GIT_HASH=$(git rev-parse --short HEAD)
+          COMMIT_MESSAGE=$(git log -1 --pretty=%s | sed 's/"/\\"/g')
 
-          # Check if version.txt actually changed
-          if ! git diff --quiet version.txt; then
+          cat > version.json <<JSON
+          {
+            "timestamp": ${TIMESTAMP},
+            "date": "${DATE_ISO}",
+            "buildId": "${BUILD_ID}",
+            "gitHash": "${GIT_HASH}",
+            "commitMessage": "${COMMIT_MESSAGE}"
+          }
+          JSON
+
+          echo "${TIMESTAMP}" > version.txt
+
+          if ! git diff --quiet version.json version.txt; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add version.txt
-            git commit -m "auto: update version.txt to $TIMESTAMP"
+            git add version.json version.txt
+            git commit -m "auto: update version metadata [skip ci]"
             git push origin main
-            echo "✅ Updated version.txt to $TIMESTAMP"
+            echo "✅ Updated version.json + version.txt"
           else
-            echo "ℹ️ version.txt already up to date"
+            echo "ℹ️ Version metadata already up to date"
           fi
