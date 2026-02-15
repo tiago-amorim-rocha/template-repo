@@ -1,86 +1,110 @@
 // Main application entry point
-// This file is loaded with cache busting via index.html
+// Loaded with cache busting via index.html
 
 import * as debugConsole from './console.js';
 
-// Version checking configuration
-const VERSION_CHECK_INTERVAL = 2000; // Check every 2 seconds
-let currentVersion = window.__BUILD || 'unknown';
+const VERSION_CHECK_INTERVAL = 5000;
+const VERSION_ENDPOINT = './version.json';
+
+let currentVersion = window.__BUILD_INFO || null;
 let checkCounter = 0;
 
-// Check for version updates
+function formatVersion(version) {
+  if (!version) return 'unknown';
+  const hash = version.gitHash || 'no-hash';
+  const date = version.date ? new Date(version.date).toLocaleString() : 'no-date';
+  return `${hash} @ ${date}`;
+}
+
+async function fetchVersionInfo() {
+  const res = await fetch(VERSION_ENDPOINT, {
+    cache: 'no-store',
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      Pragma: 'no-cache'
+    }
+  });
+
+  if (!res.ok) {
+    throw new Error(`version request failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
+function showReloadButton(nextVersion) {
+  const reloadBtn = document.getElementById('reload-button');
+  if (!reloadBtn) return;
+
+  reloadBtn.classList.add('show');
+  if (nextVersion?.gitHash) {
+    reloadBtn.title = `New build ${nextVersion.gitHash} available. Tap to reload.`;
+  }
+}
+
+function forceReload() {
+  console.log('🔄 Reloading application for latest version...');
+  window.location.reload();
+}
+
 async function checkForUpdates() {
   try {
-    checkCounter++;
-    const res = await fetch('./version.txt', { cache: 'no-store' });
-    if (!res.ok) return;
+    checkCounter += 1;
+    const latestVersion = await fetchVersionInfo();
 
-    const latestVersion = (await res.text()).trim();
-
-    // Log every 10 checks
-    if (checkCounter % 10 === 0) {
-      console.log(`✅ Version check #${checkCounter}: current=${currentVersion}, latest=${latestVersion}`);
+    if (checkCounter % 6 === 0) {
+      console.log(`👁️ Version check #${checkCounter}`, {
+        current: currentVersion?.buildId,
+        latest: latestVersion?.buildId
+      });
     }
 
-    if (latestVersion !== currentVersion) {
-      console.log('🔄 New version detected!', { current: currentVersion, latest: latestVersion });
-      showReloadButton();
+    if (!currentVersion) {
+      currentVersion = latestVersion;
+      return;
+    }
+
+    const hasUpdate =
+      latestVersion.buildId !== currentVersion.buildId ||
+      latestVersion.timestamp !== currentVersion.timestamp;
+
+    if (hasUpdate) {
+      console.warn('🔄 New version detected', {
+        current: formatVersion(currentVersion),
+        latest: formatVersion(latestVersion)
+      });
+      showReloadButton(latestVersion);
     }
   } catch (err) {
     console.debug('Version check failed:', err.message);
   }
 }
 
-// Show the reload button
-function showReloadButton() {
-  const reloadBtn = document.getElementById('reload-button');
-  if (reloadBtn) {
-    reloadBtn.classList.add('show');
-  }
-}
-
-// Force reload the page
-function forceReload() {
-  console.log('🔄 Reloading application...');
-  // Clear cache and reload
-  window.location.reload(true);
-}
-
-// Initialize version checking
 function initVersionCheck() {
   const reloadBtn = document.getElementById('reload-button');
   if (reloadBtn) {
     reloadBtn.addEventListener('click', forceReload);
   }
 
-  // Start periodic version checks
   setInterval(checkForUpdates, VERSION_CHECK_INTERVAL);
+  checkForUpdates();
 
-  console.log(`👁️ Version monitoring started (checking every ${VERSION_CHECK_INTERVAL/1000}s)`);
+  console.log(`👁️ Version monitoring started (${VERSION_CHECK_INTERVAL / 1000}s interval)`);
 }
 
-// Example: Initialize your app
 function init() {
-  // Initialize debug console FIRST
   debugConsole.init();
 
   console.log('🚀 Application loaded!');
-  console.log('📦 Build version:', currentVersion);
-  console.log('✨ Initializing application...');
+  console.log('📦 Build version:', formatVersion(currentVersion));
 
-  // Initialize version checking
   initVersionCheck();
-
-  // Your application code here
-  // Example: Update UI, set up event listeners, etc.
 }
 
-// Run initialization when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
 }
 
-// Export for other modules if needed
 export { init };
